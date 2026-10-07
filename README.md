@@ -101,6 +101,33 @@ gdbus call --session --dest org.freedesktop.impl.portal.PermissionStore \
 
 (`flatpak permission-set kde-authorized remote-desktop org.kde.krdpserver yes` does the same if flatpak is installed.)
 
+### Color range
+
+mstsc displays limited-range H.264 without expanding it to full range, so black (16) shows as dark grey. With the kpipewire patch, ask for full range **for krdp only**, so screen recordings keep the standard limited range:
+
+```bash
+mkdir -p ~/.config/systemd/user/app-org.kde.krdpserver.service.d
+cp config/systemd/app-org.kde.krdpserver.service.d/color-range.conf \
+   ~/.config/systemd/user/app-org.kde.krdpserver.service.d/
+systemctl --user daemon-reload
+systemctl --user restart app-org.kde.krdpserver.service
+```
+
+Check it with a known dark color: Konsole's Breeze background (35,38,39) should measure the same on the client, not (46,48,51). That's 16 + 35 × 219/255 ≈ 46, the signature of limited range shown as full.
+
+### Clipboard images (optional)
+
+krdp 6.3 doesn't sync the clipboard. If you use [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) instead, it reads the X11 clipboard through Xwayland, and on Plasma 6.3 Wayland images copied in native apps never reach it ([CrossPaste #5167](https://github.com/CrossPaste/crosspaste-desktop/issues/5167)). `clipboard-bridge/` copies Wayland clipboard images into X11. It needs `wl-clipboard` and `xclip`:
+
+```bash
+install -m755 clipboard-bridge/wl-x11-image-bridge ~/.local/bin/
+cp clipboard-bridge/wl-x11-image-bridge.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now wl-x11-image-bridge
+```
+
+Separately, Spectacle 6.3's auto-copy is flaky on Wayland ([KDE bug 500366](https://bugs.kde.org/show_bug.cgi?id=500366)). If a screenshot won't paste, select it in Klipper's history.
+
 ### Windows side
 
 - Use the user name exactly as configured in krdp, without a `DOMAIN\` prefix.

@@ -1,0 +1,32 @@
+#!/bin/bash
+# Copy images from the Wayland clipboard to the X11 (Xwayland) clipboard.
+# KWin bridges text between the two, but not image/png, so X11-only apps
+# (CrossPaste, which is Java/AWT) never see screenshots copied natively.
+#
+# Without arguments: watch the Wayland clipboard.
+# With "--handle": called by wl-paste on each change.
+
+set -u
+state="${XDG_RUNTIME_DIR:-/tmp}/wl-x11-image-bridge"
+mkdir -p "$state"
+
+if [ "${1:-}" != "--handle" ]; then
+    # wl-paste pipes the selection to the handler's stdin, as PNG when offered.
+    exec wl-paste --type image/png --watch "$0" --handle
+fi
+
+# Read stdin even when unused, or the app that owns the clipboard blocks.
+tmp="$state/incoming.png"
+cat > "$tmp"
+# Only act on real PNG data (selections without image/png arrive empty or as text).
+[ "$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ] || exit 0
+
+# Skip images already handed over. When xclip takes the X11 clipboard,
+# KWin may mirror it back to Wayland, which fires this handler again.
+hash=$(sha256sum "$tmp" | cut -d' ' -f1)
+[ "$hash" = "$(cat "$state/last" 2>/dev/null)" ] && exit 0
+echo "$hash" > "$state/last"
+
+mv -f "$tmp" "$state/current.png"
+# xclip forks and keeps serving the image until another app takes the clipboard.
+xclip -selection clipboard -t image/png -i "$state/current.png"

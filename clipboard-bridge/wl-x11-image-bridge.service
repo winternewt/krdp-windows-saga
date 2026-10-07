@@ -1,0 +1,12 @@
+[Unit]
+Description=Copy Wayland clipboard images to the X11 clipboard (for CrossPaste)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/wl-x11-image-bridge
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target
