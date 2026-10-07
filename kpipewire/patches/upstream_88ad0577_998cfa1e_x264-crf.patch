@@ -1,0 +1,42 @@
+Description: libx264: use CRF so the quality setting takes effect
+ libx264 ignores global_quality. Backport of upstream 88ad0577 with the
+ recommended 17-28 range from 998cfa1e.
+Origin: backport, https://invent.kde.org/plasma/kpipewire/-/commit/88ad0577
+
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -8,6 +8,8 @@
+ 
+ #include "libx264encoder_p.h"
+ 
++#include <cmath>
++
+ #include <QSize>
+ #include <QThread>
+ 
+@@ -60,12 +62,6 @@
+     m_avCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+     m_avCodecContext->time_base = AVRational{1, 1000};
+ 
+-    if (m_quality) {
+-        m_avCodecContext->global_quality = percentageToAbsoluteQuality(m_quality);
+-    } else {
+-        m_avCodecContext->global_quality = 35;
+-    }
+-
+     switch (m_profile) {
+     case H264Profile::Baseline:
+         m_avCodecContext->profile = FF_PROFILE_H264_BASELINE;
+@@ -103,6 +99,12 @@
+ {
+     AVDictionary *options = SoftwareEncoder::buildEncodingOptions();
+ 
++    // libx264 ignores the AVCodecContext global_quality / qscale fields and
++    // requires CRF to be passed as a private option for constant-quality mode.
++    // Recommended values range is 17 - 28.
++    const double crf = m_quality ? std::lerp(28.0, 17.0, m_quality.value() / 100.0) : 23.0;
++    av_dict_set(&options, "crf", QByteArray::number(crf, 'f', 1).constData(), 0);
++
+     // Disable motion estimation, not great while dragging windows but speeds up encoding by an order of magnitude
+     av_dict_set(&options, "flags", "+mv4", 0);
+     // Disable in-loop filtering

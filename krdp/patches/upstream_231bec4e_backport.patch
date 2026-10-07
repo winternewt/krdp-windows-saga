@@ -1,0 +1,41 @@
+From 231bec4ea0d1dde7f51581b5bed1871b9a1b6681 Mon Sep 17 00:00:00 2001
+From: Nicolas Blackburn <stormlord@kde.org>
+Date: Sun, 1 Mar 2026 11:48:26 -0500
+Subject: [PATCH] Fix potential deadlock in RdpConnection destructor
+
+The destructor only called peer->Close() when state was Streaming, but
+the run thread could be blocked in WaitForMultipleObjects in other
+states too (e.g. Running). This caused thread.join() to deadlock
+because the thread was waiting for socket events that would never
+arrive.
+
+Always call peer->Close() when the peer exists, regardless of state,
+to unblock the run thread's event wait.
+
+Also guard onClose() against being called twice, which can happen when
+the destructor calls peer->Close() which triggers onClose(), and then
+the destructor's thread cleanup path triggers it again.
+---
+ src/RdpConnection.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/RdpConnection.cpp b/src/RdpConnection.cpp
+index 775aa84..96a2141 100644
+--- a/src/RdpConnection.cpp
++++ b/src/RdpConnection.cpp
+@@ -237,7 +237,11 @@ RdpConnection::RdpConnection(Server *server, qintptr socketHandle)
+ 
+ RdpConnection::~RdpConnection()
+ {
+-    if (d->state == State::Streaming) {
++    // Close the peer first to unblock WaitForMultipleObjects in the
++    // run thread. Without this, thread.join() can deadlock when the
++    // session is not in the Streaming state but the thread is still
++    // blocked waiting for socket events.
++    if (d->peer) {
+         d->peer->Close(d->peer);
+     }
+ 
+-- 
+GitLab
+

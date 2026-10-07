@@ -1,0 +1,32 @@
+Description: Fix keyboard input with FreeRDP3 (press detection and keycode offset)
+ Windows mstsc sends key presses without KBD_FLAGS_DOWN, so every key was
+ treated as a release. FreeRDP3 also returns real evdev keycodes, so the
+ extra "- 8" shifted every key. Backported from upstream commit 0fcf4e51.
+Origin: backport, https://invent.kde.org/plasma/krdp/-/commit/0fcf4e51
+
+--- a/src/InputHandler.cpp
++++ b/src/InputHandler.cpp
+@@ -186,12 +186,12 @@
+     virtualCode = flags & KBD_FLAGS_EXTENDED ? virtualCode | KBDEXT : virtualCode;
+     // While "type" suggests an EVDEV code, the actual code is an X code
+ #ifdef FREERDP3
+-    quint32 keycode = GetKeycodeFromVirtualKeyCode(virtualCode, WINPR_KEYCODE_TYPE_EVDEV) - 8;
++    quint32 keycode = GetKeycodeFromVirtualKeyCode(virtualCode, WINPR_KEYCODE_TYPE_EVDEV);
+ #else
+     quint32 keycode = GetKeycodeFromVirtualKeyCode(virtualCode, KEYCODE_TYPE_EVDEV) - 8;
+ #endif
+ 
+-    auto type = flags & KBD_FLAGS_DOWN ? QEvent::KeyPress : QEvent::KeyRelease;
++    auto type = flags & KBD_FLAGS_RELEASE ? QEvent::KeyRelease : QEvent::KeyPress;
+ 
+     auto event = std::make_shared<QKeyEvent>(type, 0, Qt::KeyboardModifiers{}, keycode, 0, 0);
+     Q_EMIT inputEvent(event);
+@@ -207,7 +207,7 @@
+         return true;
+     }
+ 
+-    auto type = flags & KBD_FLAGS_DOWN ? QEvent::KeyPress : QEvent::KeyRelease;
++    auto type = flags & KBD_FLAGS_RELEASE ? QEvent::KeyRelease : QEvent::KeyPress;
+ 
+     auto event = std::make_shared<QKeyEvent>(type, 0, Qt::KeyboardModifiers{}, 0, keysym, 0);
+     Q_EMIT inputEvent(event);

@@ -1,0 +1,37 @@
+Description: Keep the pre-encode frame queue short
+ Bounds input latency to a few frames instead of up to a second.
+ Same limit as upstream backpressure (d3b06515), done with the 6.3 kpipewire API.
+Origin: other
+
+--- a/src/AbstractSession.cpp
++++ b/src/AbstractSession.cpp
+@@ -9,6 +9,11 @@
+ 
+ namespace KRdp
+ {
++// Frames kpipewire may hold before encoding. Its default (50) and the old value
++// (one second of frames) let latency build up when 4K conversion can't keep up;
++// beyond this limit raw frames are dropped before encoding, which is safe for H.264.
++constexpr int MaxPendingFrames = 3;
++
+ 
+ class KRDP_NO_EXPORT AbstractSession::Private
+ {
+@@ -102,8 +107,7 @@
+     d->frameRate = framerate;
+     if (d->encodedStream) {
+         d->encodedStream->setMaxFramerate({framerate, 1});
+-        // this buffers 1 second of frames and drops after that
+-        d->encodedStream->setMaxPendingFrames(framerate);
++        d->encodedStream->setMaxPendingFrames(MaxPendingFrames);
+     }
+ }
+ 
+@@ -126,6 +130,7 @@
+ {
+     if (!d->encodedStream) {
+         d->encodedStream = std::make_unique<PipeWireEncodedStream>();
++        d->encodedStream->setMaxPendingFrames(MaxPendingFrames);
+         if (d->frameRate) {
+             d->encodedStream->setMaxFramerate({d->frameRate.value(), 1});
+         }

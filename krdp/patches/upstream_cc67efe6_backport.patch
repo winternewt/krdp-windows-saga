@@ -1,0 +1,131 @@
+From cc67efe620b7d5c09b1b4a78d3a52ccf96e57652 Mon Sep 17 00:00:00 2001
+From: Nicolas Blackburn <stormlord@kde.org>
+Date: Sun, 1 Mar 2026 11:48:26 -0500
+Subject: [PATCH] Fix thread safety issues in VideoStream
+
+Several fixes for race conditions and resource management:
+
+- Add pendingFramesMutex to protect pendingFrames which is accessed
+  from both the frame submission thread (sendFrame inserts) and the
+  FreeRDP callback thread (onFrameAcknowledge removes).
+
+- Make requestedFrameRate atomic since it is read by the frame
+  submission thread and written by the main thread via
+  updateRequestedFrameRate().
+
+- Call close() in the destructor to ensure the frame submission
+  thread is stopped and resources are cleaned up.
+
+- In close(), stop the frame submission thread BEFORE closing the
+  GFX context to prevent use-after-free. Clear pending state and
+  reset gfxContext to prevent double-close.
+
+- Guard frame dequeuing in the submission thread: don't dequeue
+  frames until CapsAdvertise has completed and the GFX channel is
+  ready. Without this, the initial I-frame (keyframe) could be
+  dequeued and sent before the channel is ready, causing a black
+  screen until the next keyframe.
+---
+ src/VideoStream.cpp | 38 +++++++++++++++++++++++++++++++++-----
+ 1 file changed, 33 insertions(+), 5 deletions(-)
+
+diff --git a/src/VideoStream.cpp b/src/VideoStream.cpp
+index eef8252..b10f697 100644
+--- a/src/VideoStream.cpp
++++ b/src/VideoStream.cpp
+@@ -128,8 +128,10 @@ public:
+     QQueue<VideoFrame> frameQueue;
+     QSet<uint32_t> pendingFrames;
+ 
++    std::mutex pendingFramesMutex;
++
+     int maximumFrameRate = 120;
+-    int requestedFrameRate = 60;
++    std::atomic_int requestedFrameRate = 60;
+     QQueue<FrameRateEstimate> frameRateEstimates;
+     clk::system_clock::time_point lastFrameRateEstimation;
+ 
+@@ -146,6 +148,7 @@ VideoStream::VideoStream(RdpConnection *session)
+ 
+ VideoStream::~VideoStream()
+ {
++    close();
+ }
+ 
+ bool VideoStream::initialize()
+@@ -179,6 +182,14 @@ bool VideoStream::initialize()
+ 
+     d->frameSubmissionThread = std::jthread([this](std::stop_token token) {
+         while (!token.stop_requested()) {
++            // Don't dequeue frames until the GFX channel is ready.
++            // This preserves the I-frame (keyframe) in the queue until
++            // CapsAdvertise has completed and we can actually send it.
++            if (!d->gfxContext || !d->capsConfirmed) {
++                std::this_thread::sleep_for(std::chrono::milliseconds(16));
++                continue;
++            }
++
+             VideoFrame nextFrame;
+             {
+                 std::unique_lock lock(d->frameQueueMutex);
+@@ -187,7 +198,7 @@ bool VideoStream::initialize()
+                 }
+             }
+             if (nextFrame.size.isEmpty()) {
+-                std::this_thread::sleep_for(std::chrono::milliseconds(1000) / d->requestedFrameRate);
++                std::this_thread::sleep_for(std::chrono::milliseconds(1000) / d->requestedFrameRate.load());
+                 continue;
+             }
+             sendFrame(nextFrame);
+@@ -205,13 +216,25 @@ void VideoStream::close()
+         return;
+     }
+ 
+-    d->gfxContext->Close(d->gfxContext.get());
+-
++    // Stop the frame submission thread first to prevent
++    // use-after-free on gfxContext during close.
+     if (d->frameSubmissionThread.joinable()) {
+         d->frameSubmissionThread.request_stop();
+         d->frameSubmissionThread.join();
+     }
+ 
++    {
++        std::lock_guard lock(d->pendingFramesMutex);
++        d->pendingFrames.clear();
++    }
++    {
++        std::lock_guard lock(d->frameQueueMutex);
++        d->frameQueue.clear();
++    }
++
++    d->gfxContext->Close(d->gfxContext.get());
++    d->gfxContext.reset();
++
+     Q_EMIT closed();
+ }
+ 
+@@ -344,6 +367,8 @@ uint32_t VideoStream::onFrameAcknowledge(const RDPGFX_FRAME_ACKNOWLEDGE_PDU *fra
+ {
+     auto id = frameAcknowledge->frameId;
+ 
++    std::lock_guard lock(d->pendingFramesMutex);
++
+     auto itr = d->pendingFrames.constFind(id);
+     if (itr == d->pendingFrames.cend()) {
+         qCWarning(KRDP) << "Got frame acknowledge for an unknown frame";
+@@ -417,7 +442,10 @@ void VideoStream::sendFrame(const VideoFrame &frame)
+ 
+     d->encodedFrames++;
+ 
+-    d->pendingFrames.insert(frameId);
++    {
++        std::lock_guard lock(d->pendingFramesMutex);
++        d->pendingFrames.insert(frameId);
++    }
+ 
+     RDPGFX_START_FRAME_PDU startFramePdu;
+     RDPGFX_END_FRAME_PDU endFramePdu;
+-- 
+GitLab
+

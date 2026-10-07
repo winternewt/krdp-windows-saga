@@ -1,0 +1,158 @@
+From 433babfefcd28bf186e5d184ad8450dcd0f52157 Mon Sep 17 00:00:00 2001
+From: reali es <kde@reali.es>
+Date: Tue, 24 Feb 2026 13:13:41 +0000
+Subject: [PATCH] Fix scroll wheel for RDP clients sending high-resolution or
+ zero-position events
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+## Summary
+
+Some RDP clients, notably Microsoft Remote Desktop for Mac, send wheel events with:
+1. **(0,0) as the mouse position** — MRD omits cursor coordinates for wheel events
+2. **Sub-120 axis rotation values** — macOS smooth scrolling sends high-resolution deltas (1-22 per event) instead of the standard 120 per wheel notch
+
+This caused scrolling to be completely non-functional with MRD on both the Portal and Plasma screencast session paths.
+
+### Changes
+
+- **InputHandler.cpp**: Track last known mouse position from move events and substitute it when a wheel event arrives with a null position
+- **PortalSession.cpp**: Switch from `NotifyPointerAxisDiscrete` (integer steps, truncates sub-120 values to 0) to `NotifyPointerAxis` (smooth scroll, preserves sub-notch precision)
+- **PlasmaScreencastV1Session.cpp**: Fix `wl_fixed_t` conversion using `wl_fixed_from_double()` (was passing raw int, making values ~256x smaller than intended)
+- Both session paths now convert Qt angleDelta (1/8-degree units) to degrees by dividing by 8, producing 15.0 per standard notch — matching libinput's wheel axis convention
+
+### Test plan
+
+- [x] Connect with Microsoft Remote Desktop for Mac — scrolling should work in both directions with natural speed
+- [x] Connect with xfreerdp/standard RDP client — verify scrolling still works correctly (standard 120-per-notch values)
+- [ ] Test horizontal scrolling if client supports it
+- [x] Verify mouse position is correct during scroll (not jumping to top-left corner)
+
+BUG: 511029
+---
+ src/InputHandler.cpp              | 35 +++++++++++++++++++++++++++----
+ src/PlasmaScreencastV1Session.cpp | 10 ++++++---
+ src/PortalSession.cpp             | 13 ++++++------
+ 3 files changed, 44 insertions(+), 14 deletions(-)
+
+diff --git a/src/InputHandler.cpp b/src/InputHandler.cpp
+index e387e55..a4a11fd 100644
+--- a/src/InputHandler.cpp
++++ b/src/InputHandler.cpp
+@@ -75,6 +75,7 @@ class KRDP_NO_EXPORT InputHandler::Private
+ public:
+     RdpConnection *session;
+     rdpInput *input;
++    QPointF lastMousePosition;
+ };
+ 
+ InputHandler::InputHandler(KRdp::RdpConnection *session)
+@@ -108,6 +109,12 @@ bool InputHandler::mouseEvent(uint16_t x, uint16_t y, uint16_t flags)
+ {
+     QPointF position = QPointF(x, y);
+ 
++    // Track last known mouse position for wheel events from clients
++    // that send (0,0) as the position (e.g. Microsoft Remote Desktop)
++    if (flags & PTR_FLAGS_MOVE) {
++        d->lastMousePosition = position;
++    }
++
+     Qt::MouseButton button = Qt::NoButton;
+     if (flags & PTR_FLAGS_BUTTON1) {
+         button = Qt::LeftButton;
+@@ -118,19 +125,39 @@ bool InputHandler::mouseEvent(uint16_t x, uint16_t y, uint16_t flags)
+     }
+ 
+     if (flags & PTR_FLAGS_WHEEL || flags & PTR_FLAGS_HWHEEL) {
++        // Use last known mouse position if the client sends (0,0)
++        if (position.isNull() && !d->lastMousePosition.isNull()) {
++            position = d->lastMousePosition;
++        }
+         auto axis = flags & WheelRotationMask;
+         if (axis & PTR_FLAGS_WHEEL_NEGATIVE) {
+             axis = (~axis & WheelRotationMask) + 1;
+         }
+         axis *= flags & PTR_FLAGS_WHEEL_NEGATIVE ? 1 : -1;
++        // The RDP protocol uses 120 units per standard wheel notch
++        // (15 degrees of rotation). Dividing by 8 converts to degrees,
++        // which we store in pixelDelta as a continuous scroll value.
++        auto degrees = axis / 8.0;
+         if (flags & PTR_FLAGS_WHEEL) {
+-            auto event =
+-                std::make_shared<QWheelEvent>(position, QPointF{}, QPoint{}, QPoint{0, axis}, Qt::NoButton, Qt::KeyboardModifiers{}, Qt::NoScrollPhase, false);
++            auto event = std::make_shared<QWheelEvent>(position,
++                                                       QPointF{},
++                                                       QPoint{0, qRound(degrees)},
++                                                       QPoint{0, axis},
++                                                       Qt::NoButton,
++                                                       Qt::KeyboardModifiers{},
++                                                       Qt::NoScrollPhase,
++                                                       false);
+             Q_EMIT inputEvent(event);
+         }
+         if (flags & PTR_FLAGS_HWHEEL) {
+-            auto event =
+-                std::make_shared<QWheelEvent>(position, QPointF{}, QPoint{}, QPoint{-axis, 0}, Qt::NoButton, Qt::KeyboardModifiers{}, Qt::NoScrollPhase, false);
++            auto event = std::make_shared<QWheelEvent>(position,
++                                                       QPointF{},
++                                                       QPoint{qRound(-degrees), 0},
++                                                       QPoint{-axis, 0},
++                                                       Qt::NoButton,
++                                                       Qt::KeyboardModifiers{},
++                                                       Qt::NoScrollPhase,
++                                                       false);
+             Q_EMIT inputEvent(event);
+         }
+         return true;
+diff --git a/src/PlasmaScreencastV1Session.cpp b/src/PlasmaScreencastV1Session.cpp
+index 1b11424..a5332ea 100644
+--- a/src/PlasmaScreencastV1Session.cpp
++++ b/src/PlasmaScreencastV1Session.cpp
+@@ -229,12 +229,16 @@ void PlasmaScreencastV1Session::sendEvent(const std::shared_ptr<QEvent> &event)
+     }
+     case QEvent::Wheel: {
+         auto we = std::static_pointer_cast<QWheelEvent>(event);
+-        auto delta = we->angleDelta();
++        auto delta = we->pixelDelta();
++        // pixelDelta contains the scroll value already converted to
++        // degrees by InputHandler, preserving sub-notch precision
++        // from clients that send high-resolution wheel values
++        // (e.g. Microsoft Remote Desktop).
+         if (delta.y() != 0) {
+-            d->remoteInterface->axis(WL_POINTER_AXIS_VERTICAL_SCROLL, delta.y() / 120);
++            d->remoteInterface->axis(WL_POINTER_AXIS_VERTICAL_SCROLL, wl_fixed_from_double(delta.y()));
+         }
+         if (delta.x() != 0) {
+-            d->remoteInterface->axis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, delta.x() / 120);
++            d->remoteInterface->axis(WL_POINTER_AXIS_HORIZONTAL_SCROLL, wl_fixed_from_double(delta.x()));
+         }
+         break;
+     }
+diff --git a/src/PortalSession.cpp b/src/PortalSession.cpp
+index 374d052..22f0f2b 100644
+--- a/src/PortalSession.cpp
++++ b/src/PortalSession.cpp
+@@ -186,13 +186,12 @@ void PortalSession::sendEvent(const std::shared_ptr<QEvent> &event)
+     }
+     case QEvent::Wheel: {
+         auto we = std::static_pointer_cast<QWheelEvent>(event);
+-        auto delta = we->angleDelta();
+-        if (delta.y() != 0) {
+-            d->remoteInterface->NotifyPointerAxisDiscrete(d->sessionPath, QVariantMap{}, 0 /* Vertical */, delta.y() / 120);
+-        }
+-        if (delta.x() != 0) {
+-            d->remoteInterface->NotifyPointerAxisDiscrete(d->sessionPath, QVariantMap{}, 1 /* Horizontal */, delta.x() / 120);
+-        }
++        auto delta = we->pixelDelta();
++        // pixelDelta contains the scroll value already converted to
++        // degrees by InputHandler. The vertical axis is negated to
++        // account for the sign convention in
++        // xdg-desktop-portal-kde's requestPointerAxis.
++        d->remoteInterface->NotifyPointerAxis(d->sessionPath, QVariantMap{}, delta.x(), -delta.y());
+         break;
+     }
+     case QEvent::KeyPress:
+-- 
+GitLab
+

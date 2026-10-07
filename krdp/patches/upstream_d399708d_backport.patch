@@ -1,0 +1,17 @@
+Description: Clear the pending-send queue on new key frames
+ Bounds the send queue to one key-frame interval.
+Origin: backport, https://invent.kde.org/plasma/krdp/-/commit/d399708d
+
+--- a/src/VideoStream.cpp
++++ b/src/VideoStream.cpp
+@@ -245,6 +245,10 @@
+     }
+ 
+     std::lock_guard lock(d->frameQueueMutex);
++    // A key frame makes everything queued before it obsolete.
++    if (frame.isKeyFrame) {
++        d->frameQueue.clear();
++    }
+     d->frameQueue.append(frame);
+ }
+ 

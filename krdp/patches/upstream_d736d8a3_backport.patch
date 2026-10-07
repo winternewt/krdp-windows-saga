@@ -1,0 +1,47 @@
+From d736d8a30d5eb7530d9f607265c384a56e6cc39d Mon Sep 17 00:00:00 2001
+From: Nicolas Blackburn <stormlord@kde.org>
+Date: Sun, 1 Mar 2026 11:48:26 -0500
+Subject: [PATCH] Handle GFX CapsAdvertise re-advertisement from Windows
+ clients
+
+Windows mstsc sends CapsAdvertise twice during connection setup: once
+during initial GFX channel establishment and again after confirming.
+If the second CapsAdvertise arrives after capsConfirmed is already
+true, the surface state becomes inconsistent because the GFX channel
+has been reset but the server still references the old surfaces.
+
+This causes rendering artifacts or a black screen.
+
+Fix by detecting re-advertisement (capsConfirmed is already true),
+resetting the surface state and pending frames, and re-confirming
+caps. This allows the GFX channel to be cleanly re-established.
+---
+ src/VideoStream.cpp | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/VideoStream.cpp b/src/VideoStream.cpp
+index ee1675d..eef8252 100644
+--- a/src/VideoStream.cpp
++++ b/src/VideoStream.cpp
+@@ -259,6 +259,18 @@ bool VideoStream::onChannelIdAssigned(uint32_t channelId)
+ 
+ uint32_t VideoStream::onCapsAdvertise(const RDPGFX_CAPS_ADVERTISE_PDU *capsAdvertise)
+ {
++    // Windows clients (mstsc) send CapsAdvertise twice: once during
++    // initial setup and again after confirming. If we already confirmed
++    // caps, this is a GFX channel reset — clear surface state so
++    // surfaces get re-created on the next frame.
++    if (d->capsConfirmed) {
++        qCDebug(KRDP) << "GFX channel reset (re-advertisement), resetting surface state";
++        d->capsConfirmed = false;
++        d->pendingReset = true;
++        d->surface = Surface{};
++        d->pendingFrames.clear();
++    }
++
+     auto capsSets = capsAdvertise->capsSets;
+     auto count = capsAdvertise->capsSetCount;
+ 
+-- 
+GitLab
+

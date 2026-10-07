@@ -1,0 +1,34 @@
+Description: libx264: explicit color matrix and range, tagged in the stream
+ Defaults to BT.709 limited range; overridable via KPIPEWIRE_X264_MATRIX and
+ KPIPEWIRE_X264_RANGE for testing. Upstream cb00651a builds the filter graph in
+ the constructor, before the range is set, so it has no effect for libx264.
+Origin: other
+
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -36,6 +36,14 @@
+ 
+ bool LibX264Encoder::initialize(const QSize &size)
+ {
++    // Convert with an explicit matrix and range, and tag the stream with them, so
++    // decoders don't have to guess. Defaults: BT.709, limited range. For testing,
++    // KPIPEWIRE_X264_MATRIX=bt601|bt709 and KPIPEWIRE_X264_RANGE=limited|full.
++    const bool bt601 = qEnvironmentVariable("KPIPEWIRE_X264_MATRIX") == u"bt601"_s;
++    const bool fullRange = qEnvironmentVariable("KPIPEWIRE_X264_RANGE") == u"full"_s;
++    m_filterGraphToParse = u"pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=out_color_matrix=%1:out_range=%2,format=pix_fmts=yuv420p"_s.arg(bt601 ? u"bt601"_s : u"bt709"_s,
++                                                                                                                                 fullRange ? u"full"_s : u"tv"_s);
++    qCInfo(PIPEWIRERECORD_LOGGING) << "libx264 color:" << (bt601 ? "bt601" : "bt709") << (fullRange ? "full" : "limited");
+     createFilterGraph(size);
+ 
+     auto codec = avcodec_find_encoder_by_name("libx264");
+@@ -60,6 +68,10 @@
+     m_avCodecContext->max_b_frames = 0;
+     m_avCodecContext->gop_size = 100;
+     m_avCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
++    m_avCodecContext->color_range = fullRange ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
++    m_avCodecContext->colorspace = bt601 ? AVCOL_SPC_SMPTE170M : AVCOL_SPC_BT709;
++    m_avCodecContext->color_primaries = bt601 ? AVCOL_PRI_SMPTE170M : AVCOL_PRI_BT709;
++    m_avCodecContext->color_trc = bt601 ? AVCOL_TRC_SMPTE170M : AVCOL_TRC_BT709;
+     m_avCodecContext->time_base = AVRational{1, 1000};
+     // With a 1/1000 time base x264 assumes 1000 fps and signals H.264 level 6.2,
+     // which hardware decoders (e.g. Windows mstsc via DXVA) reject. Declare the

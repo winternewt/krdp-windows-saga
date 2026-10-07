@@ -1,0 +1,9 @@
+local_keyboard-press-uses-release-flag.patch
+upstream_d736d8a3_backport.patch
+upstream_433babfe_backport.patch
+upstream_cc67efe6_backport.patch
+upstream_59763161_backport.patch
+upstream_231bec4e_backport.patch
+local_disable-rtt-framerate-heuristic.patch
+upstream_d399708d_backport.patch
+local_small-encoder-queue.patch

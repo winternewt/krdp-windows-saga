@@ -1,0 +1,26 @@
+Description: libx264: signal a decodable H.264 level
+ The 1/1000 time base made x264 signal level 6.2, which hardware decoders reject.
+Origin: other
+
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -61,6 +61,10 @@
+     m_avCodecContext->gop_size = 100;
+     m_avCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+     m_avCodecContext->time_base = AVRational{1, 1000};
++    // With a 1/1000 time base x264 assumes 1000 fps and signals H.264 level 6.2,
++    // which hardware decoders (e.g. Windows mstsc via DXVA) reject. Declare the
++    // real frame rate and cap the level at 5.1, which covers 4K frame sizes.
++    m_avCodecContext->framerate = AVRational{60, 1};
+ 
+     switch (m_profile) {
+     case H264Profile::Baseline:
+@@ -105,6 +109,8 @@
+     const double crf = m_quality ? std::lerp(28.0, 17.0, m_quality.value() / 100.0) : 23.0;
+     av_dict_set(&options, "crf", QByteArray::number(crf, 'f', 1).constData(), 0);
+ 
++    av_dict_set(&options, "level", "5.1", 0);
++
+     // Disable motion estimation, not great while dragging windows but speeds up encoding by an order of magnitude
+     av_dict_set(&options, "flags", "+mv4", 0);
+     // Disable in-loop filtering

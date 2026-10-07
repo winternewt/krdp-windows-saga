@@ -1,0 +1,39 @@
+From 597631618a9964e5b8c054203d25d8e9717b3d17 Mon Sep 17 00:00:00 2001
+From: Nicolas Blackburn <stormlord@kde.org>
+Date: Sun, 1 Mar 2026 11:48:26 -0500
+Subject: [PATCH] Fix PortalSession destructor crash and resource leak
+
+Two fixes for the PortalSession destructor:
+
+1. Guard against empty sessionPath: if the session was never
+   successfully created (e.g. portal setup failed), the destructor
+   would call NotifyKeyboardKeycode and Close on an empty D-Bus path,
+   causing D-Bus errors.
+
+2. Use synchronous D-Bus call (with 2s timeout) instead of asyncCall
+   for the session Close message. With asyncCall, the PortalSession
+   object could be destroyed before the close message is delivered,
+   leaving the portal session leaked on the server side.
+---
+ src/PortalSession.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/PortalSession.cpp b/src/PortalSession.cpp
+index 22f0f2b..178e5bf 100644
+--- a/src/PortalSession.cpp
++++ b/src/PortalSession.cpp
+@@ -127,6 +127,11 @@ PortalSession::PortalSession()
+ 
+ PortalSession::~PortalSession()
+ {
++    if (d->sessionPath.path().isEmpty()) {
++        qCDebug(KRDP) << "No portal session to close (session was never created)";
++        return;
++    }
++
+     // Make sure to clear any modifier keys that were pressed when the session closed, otherwise
+     // we risk those keys getting stuck and the original session becoming unusable.
+     for (auto keycode : {KEY_LEFTCTRL, KEY_RIGHTCTRL, KEY_LEFTSHIFT, KEY_RIGHTSHIFT, KEY_LEFTALT, KEY_RIGHTALT, KEY_LEFTMETA, KEY_RIGHTMETA}) {
+-- 
+GitLab
+

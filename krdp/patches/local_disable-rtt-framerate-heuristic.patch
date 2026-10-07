@@ -1,0 +1,19 @@
+Description: Disable the RTT-based frame-rate heuristic
+ It lowers the encoder frame rate to 1-5 fps with Windows mstsc, which
+ suspends frame acknowledgements, so every screen update lags about 1 s.
+ Upstream removed the heuristic in 978f1cb7.
+Origin: backport, https://invent.kde.org/plasma/krdp/-/commit/978f1cb7
+
+--- a/src/VideoStream.cpp
++++ b/src/VideoStream.cpp
+@@ -497,6 +497,10 @@
+ 
+ void VideoStream::updateRequestedFrameRate()
+ {
++    // Disabled, as upstream did in 978f1cb7: with Windows clients that suspend frame
++    // acknowledgements, RTT x frameDelay collapses the rate to 1-5 fps (about 1 s lag).
++    return;
++
+     auto rtt = std::max(clk::duration_cast<clk::milliseconds>(d->session->networkDetection()->averageRTT()), clk::milliseconds(1));
+     auto now = clk::system_clock::now();
+ 
