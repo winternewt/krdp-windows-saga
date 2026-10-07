@@ -6,7 +6,7 @@ I wanted something simple: sit at a Windows 10 laptop and use my Linux desktop t
 
 It took a day. Seven separate problems were stacked on top of each other, each hiding the next. Most were already fixed upstream in newer Plasma versions, which Debian stable doesn't have. Two weren't fixed anywhere. This is the story, with the log lines to search for, because nearly every one of these failures shows up as either "black screen" or "something went wrong".
 
-The patches, a build script and a symptom table are at **[repo link]**.
+The patches, a build script and a symptom table are at **[github.com/winternewt/krdp-windows-saga](https://github.com/winternewt/krdp-windows-saga)**.
 
 *A note on method: I did this with an AI coding assistant (Claude Code) driving the terminal: reading logs, diffing upstream commits, building packages. I ran the tests and made the calls. It's still very much the Linux tradition of fixing it yourself, except I didn't have to type the patches.*
 
@@ -124,4 +124,4 @@ CrossPaste is a Java app, which on Linux means X11 through Xwayland. KWin passed
 
 Everything is in the repo: both patch sets (they rebuild cleanly from `apt source`), the build script, the color drop-in, the clipboard bridge, and a symptom → log line → fix table.
 
-**[repo link]**
+**[github.com/winternewt/krdp-windows-saga](https://github.com/winternewt/krdp-windows-saga)**
