@@ -23,7 +23,7 @@ Look in `journalctl --user -u app-org.kde.krdpserver.service` (krdp), and in the
 | About 1 s lag on everything | Thousands of `suspend frame ack` | krdp's frame-rate logic collapses to 1–5 fps with Windows clients | **krdp patch** `local_disable-rtt-framerate-heuristic.patch` (upstream removed it in `978f1cb7`) |
 | Lag that builds up (0.2–1 s); server socket queue empty | `ss -tni` shows Send-Q 0 and low RTT, krdp CPU is moderate | Windows decodes 4K in software (hardware decoding off) and falls behind | Fix the level (above) and turn Windows' hardware decoding back on |
 | Grey blacks, washed-out contrast | Measure a dark pixel: e.g. RGB (35,38,39) shows as (46,48,51) on the client | Limited-range video shown unexpanded by mstsc | **kpipewire patch** `local_x264-color-matrix-range.patch` plus the [full-range drop-in](#color-range) |
-| Black screen after restarting krdp or the portal | `kwin_screencast: "<output>" Stream error: no more input formats` | Stale screencast state after restarts | Restart krdp once more: `systemctl --user restart app-org.kde.krdpserver.service` |
+| Black screen after restarting krdp or the portal | `kwin_screencast: "<output>" Stream error: no more input formats` | Seen once, after restarting the portal and krdp in quick succession; cause not identified | Restart krdp once more: `systemctl --user restart app-org.kde.krdpserver.service` |
 | Quality slider has no effect | `[libx264] -qscale is ignored, -crf is recommended.` | kpipewire passes quality in a form x264 ignores | **kpipewire patch** `upstream_88ad0577_998cfa1e_x264-crf.patch` |
 
 ## What's fixed where
@@ -135,4 +135,4 @@ Separately, Spectacle 6.3's auto-copy is flaky on Wayland ([KDE bug 500366](http
 
 ## License
 
-Scripts and config in this repository: MIT (see `LICENSE`). Patches are derived from krdp and kpipewire and keep their upstream licenses (GPL-2.0-or-later / LGPL-2.1-or-later).
+Scripts and config in this repository: MIT (see `LICENSE`). Patches are derived from krdp and kpipewire and keep the licenses of the files they modify: mainly LGPL-2.1-only OR LGPL-3.0-only OR a later version accepted by KDE e.V. (see each package's `debian/copyright`).

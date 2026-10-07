@@ -21,4 +21,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Patches under krdp/ and kpipewire/ are derived from the respective KDE projects
-and remain under their upstream licenses (GPL-2.0-or-later / LGPL-2.1-or-later).
+and remain under the licenses of the files they modify: mainly LGPL-2.1-only OR
+LGPL-3.0-only OR a later version accepted by KDE e.V. (see debian/copyright of
+each package).

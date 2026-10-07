@@ -15,6 +15,8 @@ case "$pkg" in krdp|kpipewire) ;; *) echo "unknown package: $pkg" >&2; exit 1 ;;
 
 here="$(cd "$(dirname "$0")" && pwd)"
 work="${2:-$PWD/build-$pkg}"
+# A rerun in the same directory would append the series twice.
+[ -e "$work" ] && { echo "workdir $work exists; remove it or pass a fresh one" >&2; exit 1; }
 mkdir -p "$work"
 cd "$work"
 

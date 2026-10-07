@@ -74,11 +74,9 @@ This one is a plain Debian stable bug: anyone using krdp 6.3.5 from trixie with 
 Now everything worked, about a second late: typing, scrolling, moving the mouse. Two candidates were ruled out first:
 
 - **Not the network.** The RDP socket had nothing queued (Send-Q 0), a 3 ms round trip, and hundreds of megabits per second available.
-- **Not the encoder backing up.** kpipewire logs when it drops frames, and it never did.
+- **Not the encoder backing up.** kpipewire never reported dropping a frame, even after I later capped its queue at 3 frames.
 
-But krdp was logging `suspend frame ack` thousands of times: **6,746** in one session. The Windows client was telling the server "I'll stop acknowledging frames". krdp 6.3 sets its frame rate from round-trip time × unacknowledged frames, and with acknowledgements suspended that number blows up. The requested frame rate collapses to 1–5 fps, so every screen change waits up to a second.
-
-Upstream had found the same thing and deleted that logic ("collapses the requested rate to 1–5 fps even when there is no real send-side pressure", commit `978f1cb7`). Disabling it, plus two small queue fixes, brought the lag down to a fraction of a second.
+But krdp was logging `suspend frame ack` thousands of times: **6,746** in one session. The Windows client was telling the server "I'll stop acknowledging frames". krdp 6.3 sets its frame rate from round-trip time × unacknowledged frames. Upstream's commit removing that logic describes exactly this: it "collapses the requested rate to 1–5 fps even when there is no real send-side pressure" (`978f1cb7`). At 1–5 fps, every screen change waits up to a second. Disabling it, plus two small queue fixes, brought the lag down to a fraction of a second.
 
 ## 6. The lag that kept building
 
