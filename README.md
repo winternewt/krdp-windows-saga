@@ -50,7 +50,7 @@ Look in `journalctl --user -u app-org.kde.krdpserver.service` (krdp), and in the
 |---|---|---|
 | `upstream_859a3ce9_backport.patch` | [`859a3ce9`](https://invent.kde.org/plasma/kpipewire/-/commit/859a3ce9) | Even-size rounding fix |
 | `upstream_88ad0577_998cfa1e_x264-crf.patch` | [`88ad0577`](https://invent.kde.org/plasma/kpipewire/-/commit/88ad0577) + [`998cfa1e`](https://invent.kde.org/plasma/kpipewire/-/commit/998cfa1e) | Quality slider works (CRF 17–28 instead of an ignored `global_quality`) |
-| `local_x264-h264-level.patch` | not fixed upstream; [KDE bug 526199](https://bugs.kde.org/show_bug.cgi?id=526199) | Real frame rate plus level 5.1, so hardware decoders accept the stream |
+| `local_x264-h264-level.patch` | not fixed upstream; [KDE bug 526820](https://bugs.kde.org/show_bug.cgi?id=526820) | Real frame rate plus level 5.1, so hardware decoders accept the stream |
 | `local_x264-color-matrix-range.patch` | not fixed upstream; [KDE bug 526795](https://bugs.kde.org/show_bug.cgi?id=526795) | Explicit BT.709 matrix and range, tagged in the stream; `KPIPEWIRE_X264_RANGE=full\|limited`, `KPIPEWIRE_X264_MATRIX=bt709\|bt601` |
 
 Upstream's own full-range fix ([`cb00651a`](https://invent.kde.org/plasma/kpipewire/-/commit/cb00651a), for [bug 507015](https://bugs.kde.org/show_bug.cgi?id=507015)) has no effect for the software encoders: they build their filter graph in the constructor, before the range is set (bug 526795, found by reading the code). The local patch here doesn't depend on it.

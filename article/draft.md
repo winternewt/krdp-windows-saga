@@ -93,7 +93,7 @@ So the real fix was problem 3's root cause. I patched kpipewire to give x264 the
 
 The suspended acknowledgements were never really a network signal. The software decoder was saying it couldn't keep up.
 
-The level bug turned out to be known: [KDE bug 526199](https://bugs.kde.org/show_bug.cgi?id=526199), filed two weeks earlier for a different client. Upstream's answer has been a different codec: Plasma 6.7+ falls back to RemoteFX "progressive" when H.264 decoding fails ([bug 502333](https://bugs.kde.org/show_bug.cgi?id=502333)), which avoids the black screen. That's a reasonable fix, but it isn't on Debian stable, and H.264 with GPU decoding uses less bandwidth anyway. I added my confirmation and the two-line patch to the bug.
+The level bug turned out to be known: [KDE bug 526199](https://bugs.kde.org/show_bug.cgi?id=526199), filed two weeks earlier for a different client, though under the client app (krdc) rather than the encoding library. Upstream's answer has been a different codec: Plasma 6.7+ falls back to RemoteFX "progressive" when H.264 decoding fails ([bug 502333](https://bugs.kde.org/show_bug.cgi?id=502333)), which avoids the black screen. That's a reasonable fix, but it isn't on Debian stable, and H.264 with GPU decoding uses less bandwidth anyway. My long comment with the patch on that bug didn't go well: it was closed as filed under the wrong product. Fair enough, and a lesson in bug-tracker manners. The short version, in the right place, is [KDE bug 526820](https://bugs.kde.org/show_bug.cgi?id=526820).
 
 The same rebuild also fixed the quality slider. kpipewire passed quality to x264 in a field x264 ignores (the log said so the whole time: `-qscale is ignored, -crf is recommended`). Upstream fixed that too (`88ad0577`).
 
