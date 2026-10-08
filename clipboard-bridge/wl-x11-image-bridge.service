@@ -1,5 +1,5 @@
 [Unit]
-Description=Mirror the Wayland clipboard (images and text) into X11 for Xwayland apps
+Description=Mirror the Wayland clipboard (images, files and text) into X11 for Xwayland apps
 PartOf=graphical-session.target
 After=graphical-session.target
 

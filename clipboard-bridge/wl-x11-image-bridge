@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mirror the Wayland clipboard into the X11 (Xwayland) clipboard.
-# KWin 6.3 doesn't pass native Wayland copies (images, and text unless an X11
+# KWin 6.3 doesn't pass native Wayland copies (images, copied files, and text unless an X11
 # window has focus) to X11 apps, so X11-only apps such as CrossPaste
 # (Java/AWT) miss them. X11 -> Wayland already works, so only this direction
 # is handled here.
@@ -25,6 +25,10 @@ new="$state/new"
 if grep -qx 'image/png' <<< "$types"; then
     type=image/png
     wl-paste --type image/png > "$new" 2>/dev/null || exit 0
+elif grep -qx 'text/uri-list' <<< "$types"; then
+    # Files copied in a file manager. Java/AWT reads text/uri-list as a file list.
+    type=text/uri-list
+    wl-paste --type text/uri-list > "$new" 2>/dev/null || exit 0
 elif grep -q '^text/plain' <<< "$types" || grep -qx 'UTF8_STRING' <<< "$types"; then
     type=UTF8_STRING
     wl-paste --no-newline --type text > "$new" 2>/dev/null || exit 0
@@ -33,16 +37,33 @@ else
 fi
 [ -s "$new" ] || exit 0
 
-# Skip if X11 already holds the same content. This covers copies that came
-# from X11 (KWin mirrors them to Wayland) and our own earlier handoffs, so
-# nothing bounces back and forth.
-if [ "$type" = image/png ]; then
-    current="$(timeout 2 xclip -selection clipboard -o -t image/png 2>/dev/null | sha256sum)"
-else
-    current="$(timeout 2 xclip -selection clipboard -o 2>/dev/null | sha256sum)"
-fi
-[ "$(sha256sum < "$new")" = "$current" ] && exit 0
+# Compare content, not bytes: the same file list comes back with different
+# line endings (CrossPaste, Klipper), and text may gain a trailing newline.
+normalize() {
+    case "$1" in
+        text/uri-list) tr -d '\r' | grep -v -e '^#' -e '^$' | sort -u ;;
+        UTF8_STRING) tr -d '\r' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' ;;
+        *) cat ;;
+    esac
+}
+fingerprint() { normalize "$type" | sha256sum | cut -d' ' -f1; }
 
-mv -f "$new" "$state/current"
+newfp="$type $(fingerprint < "$new")"
+
+# Skip what we handed over last time. Each handoff comes back as a Wayland
+# change (KWin mirrors X11, CrossPaste re-sets the clipboard, Klipper restores
+# it), and passing it on again would loop.
+[ "$newfp" = "$(cat "$state/last" 2>/dev/null)" ] && exit 0
+
+# Skip if X11 already holds the same content (copies that came from X11).
+curfp="$type $(timeout 2 xclip -selection clipboard -o -t "$type" 2>/dev/null | fingerprint)"
+[ "$newfp" = "$curfp" ] && { echo "$newfp" > "$state/last"; exit 0; }
+
+if [ "$type" = text/uri-list ]; then
+    normalize "$type" < "$new" | sed 's/$/\r/' > "$state/current"
+else
+    mv -f "$new" "$state/current"
+fi
+echo "$newfp" > "$state/last"
 # xclip forks and keeps serving the content until another app takes the clipboard.
 xclip -selection clipboard -t "$type" -i "$state/current"
