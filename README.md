@@ -117,7 +117,7 @@ Check it with a known dark color: Konsole's Breeze background (35,38,39) should 
 
 ### Clipboard images (optional)
 
-krdp 6.3 doesn't sync the clipboard. If you use [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) instead, it reads the X11 clipboard through Xwayland, and on Plasma 6.3 Wayland images copied in native apps never reach it ([CrossPaste #5167](https://github.com/CrossPaste/crosspaste-desktop/issues/5167)). `clipboard-bridge/` copies Wayland clipboard images into X11. It needs `wl-clipboard` and `xclip`:
+krdp 6.3 doesn't sync the clipboard. If you use [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) instead, it reads the X11 clipboard through Xwayland, and on Plasma 6.3 copies made in native Wayland apps don't reliably reach it: images never do, and text only while an X11 window has focus ([CrossPaste #5167](https://github.com/CrossPaste/crosspaste-desktop/issues/5167)). `clipboard-bridge/` mirrors the Wayland clipboard (PNG images and text) into X11, and skips content X11 already holds, so nothing bounces back. It needs `wl-clipboard` and `xclip`:
 
 ```bash
 install -m755 clipboard-bridge/wl-x11-image-bridge ~/.local/bin/

@@ -1,5 +1,5 @@
 [Unit]
-Description=Copy Wayland clipboard images to the X11 clipboard (for CrossPaste)
+Description=Mirror the Wayland clipboard (images and text) into X11 for Xwayland apps
 PartOf=graphical-session.target
 After=graphical-session.target
 

@@ -1,7 +1,9 @@
 #!/bin/bash
-# Copy images from the Wayland clipboard to the X11 (Xwayland) clipboard.
-# KWin bridges text between the two, but not image/png, so X11-only apps
-# (CrossPaste, which is Java/AWT) never see screenshots copied natively.
+# Mirror the Wayland clipboard into the X11 (Xwayland) clipboard.
+# KWin 6.3 doesn't pass native Wayland copies (images, and text unless an X11
+# window has focus) to X11 apps, so X11-only apps such as CrossPaste
+# (Java/AWT) miss them. X11 -> Wayland already works, so only this direction
+# is handled here.
 #
 # Without arguments: watch the Wayland clipboard.
 # With "--handle": called by wl-paste on each change.
@@ -11,22 +13,36 @@ state="${XDG_RUNTIME_DIR:-/tmp}/wl-x11-image-bridge"
 mkdir -p "$state"
 
 if [ "${1:-}" != "--handle" ]; then
-    # wl-paste pipes the selection to the handler's stdin, as PNG when offered.
-    exec wl-paste --type image/png --watch "$0" --handle
+    exec wl-paste --watch "$0" --handle
 fi
 
-# Read stdin even when unused, or the app that owns the clipboard blocks.
-tmp="$state/incoming.png"
-cat > "$tmp"
-# Only act on real PNG data (selections without image/png arrive empty or as text).
-[ "$(head -c 8 "$tmp" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ] || exit 0
+# Drain stdin first: the clipboard owner blocks until it has written it, and
+# further wl-paste calls would hang.
+cat > /dev/null
 
-# Skip images already handed over. When xclip takes the X11 clipboard,
-# KWin may mirror it back to Wayland, which fires this handler again.
-hash=$(sha256sum "$tmp" | cut -d' ' -f1)
-[ "$hash" = "$(cat "$state/last" 2>/dev/null)" ] && exit 0
-echo "$hash" > "$state/last"
+types="$(wl-paste --list-types 2>/dev/null)" || exit 0
+new="$state/new"
+if grep -qx 'image/png' <<< "$types"; then
+    type=image/png
+    wl-paste --type image/png > "$new" 2>/dev/null || exit 0
+elif grep -q '^text/plain' <<< "$types" || grep -qx 'UTF8_STRING' <<< "$types"; then
+    type=UTF8_STRING
+    wl-paste --no-newline --type text > "$new" 2>/dev/null || exit 0
+else
+    exit 0
+fi
+[ -s "$new" ] || exit 0
 
-mv -f "$tmp" "$state/current.png"
-# xclip forks and keeps serving the image until another app takes the clipboard.
-xclip -selection clipboard -t image/png -i "$state/current.png"
+# Skip if X11 already holds the same content. This covers copies that came
+# from X11 (KWin mirrors them to Wayland) and our own earlier handoffs, so
+# nothing bounces back and forth.
+if [ "$type" = image/png ]; then
+    current="$(timeout 2 xclip -selection clipboard -o -t image/png 2>/dev/null | sha256sum)"
+else
+    current="$(timeout 2 xclip -selection clipboard -o 2>/dev/null | sha256sum)"
+fi
+[ "$(sha256sum < "$new")" = "$current" ] && exit 0
+
+mv -f "$new" "$state/current"
+# xclip forks and keeps serving the content until another app takes the clipboard.
+xclip -selection clipboard -t "$type" -i "$state/current"
