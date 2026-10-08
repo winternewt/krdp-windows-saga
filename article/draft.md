@@ -115,6 +115,12 @@ krdp 6.3 doesn't sync the clipboard at all. It opens the channel but never touch
 
 CrossPaste is a Java app, which on Linux means X11 through Xwayland. KWin passed text from the Wayland clipboard to X11 but not `image/png`. A 30-line systemd user service that watches the Wayland clipboard and copies images into X11 fixed it; it's in the repo, and reported upstream as [CrossPaste #5167](https://github.com/CrossPaste/crosspaste-desktop/issues/5167). (Spectacle 6.3's own auto-copy is separately flaky on Wayland: [KDE bug 500366](https://bugs.kde.org/show_bug.cgi?id=500366).)
 
+## Bonus: the certificate that expired after a day
+
+The next morning Windows complained about an expired certificate. krdp 6.3.5 generates its certificate with `openssl req … -days 1`, hard-coded, and never renews it. Let's Encrypt was out: my machine's domain doesn't exist in public DNS. My first replacement was a small private CA, restricted to my LAN names, plus a certificate it signed. Windows accepted the certificate and then warned on every connection that it couldn't check whether it had been revoked. A private CA publishes no revocation list, and Windows checks revocation for anything a CA issued.
+
+What finally worked is what Windows does itself: a **self-signed** certificate, imported into Windows' Trusted Root store. Windows doesn't revocation-check a trusted root, so there's no prompt at all. It's also the safer option: the certificate can't sign anything, so there's no CA key lying around. The repo's `make-cert.sh` does it in one command.
+
 ## What I took away
 
 - **"Black screen" is not a diagnosis.** In this setup it had three different causes: a missing portal permission, a rejected codec level, and a screencast stuck after restarts. The log lines are what tell them apart.

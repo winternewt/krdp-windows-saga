@@ -24,6 +24,8 @@ Look in `journalctl --user -u app-org.kde.krdpserver.service` (krdp), and in the
 | Lag that builds up (0.2–1 s); server socket queue empty | `ss -tni` shows Send-Q 0 and low RTT, krdp CPU is moderate | Windows decodes 4K in software (hardware decoding off) and falls behind | Fix the level (above) and turn Windows' hardware decoding back on |
 | Grey blacks, washed-out contrast | Measure a dark pixel: e.g. RGB (35,38,39) shows as (46,48,51) on the client | Limited-range video shown unexpanded by mstsc | **kpipewire patch** `local_x264-color-matrix-range.patch` plus the [full-range drop-in](#color-range) |
 | Black screen after restarting krdp or the portal | `kwin_screencast: "<output>" Stream error: no more input formats` | Seen once, after restarting the portal and krdp in quick succession; cause not identified | Restart krdp once more: `systemctl --user restart app-org.kde.krdpserver.service` |
+| Windows warns about the certificate on every connection (expired, or "name mismatch") | `openssl x509 -in ~/.local/share/krdpserver/krdp.crt -noout -dates` shows a one-day validity | krdp 6.3.5 generates its certificate with `openssl req -days 1` and never renews it | [`make-cert.sh`](#tls-certificate) |
+| Windows warns that it "can't check whether the certificate was revoked" | Server certificate is issued by a private CA | Windows checks revocation for CA-issued certificates, and a private CA publishes no revocation list | Use a self-signed certificate trusted as a root: [`make-cert.sh`](#tls-certificate) |
 | Quality slider has no effect | `[libx264] -qscale is ignored, -crf is recommended.` | kpipewire passes quality in a form x264 ignores | **kpipewire patch** `upstream_88ad0577_998cfa1e_x264-crf.patch` |
 
 ## What's fixed where
@@ -100,6 +102,16 @@ gdbus call --session --dest org.freedesktop.impl.portal.PermissionStore \
 ```
 
 (`flatpak permission-set kde-authorized remote-desktop org.kde.krdpserver yes` does the same if flatpak is installed.)
+
+### TLS certificate
+
+krdp 6.3.5 creates its certificate with `openssl req … -days 1` (it's hard-coded), so it expires a day after you enable the server. A certificate from your own CA doesn't fully help either: mstsc then warns that it can't check revocation. What works is a **self-signed** certificate that Windows trusts as a root. That's what Windows' own RDP certificates are, and Windows doesn't revocation-check a trusted root.
+
+```bash
+./make-cert.sh myhost myhost.lan 192.168.1.10    # every name or IP you connect with
+```
+
+It writes a 5-year certificate to `~/.local/share/krdpserver/selfsigned/`, points krdp at it, turns off krdp's own certificate generation (so the one-day generator can't overwrite it), and restarts krdp. Then copy `krdp.cer` to Windows and, in an admin prompt, run `certutil -addstore -f Root krdp.cer`. Connect using one of the names you listed; any other name still warns. The certificate can't sign anything, so trusting it as a root doesn't let anyone impersonate other sites.
 
 ### Color range
 
